@@ -15,6 +15,8 @@ import anndata as ad
 import scanpy as sc
 import squidpy as sq
 
+import matplotlib.pyplot as plt
+
 from math import floor
 
 # Function to cluster new features present in adata
@@ -38,7 +40,7 @@ def cluster_features(features: pd.DataFrame, like=None) -> pd.Series:
 
     return adata.obs["leiden"]
 
-def generate_random_boxes(image_Y,image_X,n_boxes=20,max_size=1000):
+def generate_random_boxes(image_Y,image_X,n_boxes=200,max_size=1000):
     """
     Generate random box masks for a given image. Outputs labeled mask that is the same spatial dimensions as the original image (image_Y,image_X)
     
@@ -64,7 +66,18 @@ def generate_random_boxes(image_Y,image_X,n_boxes=20,max_size=1000):
     
     return box_mask
 
-
+def box_count_fn(arr, n_box):
+    """
+    Input array from image for feature extraction.
+    Returns the area that each labeled box occupies for a given spot
+    """
+    #plt.imshow(np.squeeze(arr))
+    #plt.show()
+    box_intersect_list = []
+    for b in range(1,n_box):
+        box_intersect_list.append(np.sum(arr==b))
+    
+    return box_intersect_list
 
 
 def main():
@@ -131,7 +144,7 @@ def main():
     # Mask containing labels for randomly placed boxes
     rando_boxes = generate_random_boxes(image_Y, image_X)
     print('Box mask created')
-    print(np.unique(rando_boxes))
+    print(f'{len(np.unique(rando_boxes))} boxes added')
 
     # Creating an image container for this annotation
     box_img = sq.im.ImageContainer(
@@ -148,26 +161,70 @@ def main():
     print(img)
 
     # This one doesn't show up with small number of boxes
-    box_img.show('boxes',save='./boxes.png')
-    img.show('image',segmentation_layer='boxes',segmentation_alpha=0.8,save='./test_boxes.png')
+    #box_img.show('boxes',save='./boxes.png')
+    #img.show('image',segmentation_layer='boxes',segmentation_alpha=0.8,save='./test_boxes.png')
 
+    # This calculates the number of boxes that each spot intersects with
+    sq.im.calculate_image_features(
+        adata,
+        img.compute(),
+        layer= 'image',
+        features='segmentation',
+        features_kwargs = {
+            'segmentation': {
+                'label_layer': 'boxes',
+                'props': ['label']
+            }
+        },
+        key_added = 'box_count',
+        mask_circle = True
+    )
 
+    sq.im.calculate_image_features(
+        adata,
+        img.compute(),
+        layer='boxes',
+        features = 'custom',
+        features_kwargs = {
+            'custom': {
+                'func': box_count_fn,
+                'n_box': len(np.unique(rando_boxes))-1
+            }
+        },
+        key_added = 'box_intersect_features',
+        mask_circle = True
+    )
 
+    # Now doing the reverse (fails)
+    sq.im.calculate_image_features(
+        adata,
+        img.compute(),
+        layer = 'boxes',
+        features = 'segmentation',
+        features_kwargs = {
+            'segmentation': {
+                'label_layer': 'boxes',
+                'props': ['label']
+            }
+        },
+        key_added = 'spot_count'
+    )
 
     """
-    print(adata)
-    print('In adata:')
-    print(dir(adata))
-    print('----------------')
-    print(dir(adata.obs))
-    print('---------------')
-    print(dir(adata.obsm))
-    for a in adata.obsm:
-        print(a)
-        print(type(adata.obsm[f'{a}']))
-        print(adata.obsm[f'{a}'].shape)
+    squidpy automatically iterates through cropped spot regions no matter what is provided to the "label"
 
+    There is no way to perform the reverse as long as this is hard-coded into calculate_image_features
+    
     """
+
+    print(type(adata.obsm['box_count']))
+    print(adata.obsm['box_count'].shape)
+    print(type(adata.obsm['spot_count']))
+    print(adata.obsm['spot_count'].shape)
+    adata.obsm['box_count'].to_csv('./box_count_test.csv')
+    adata.obsm['box_intersect_features'].to_csv('./box_intersect_features.csv')
+    adata.obsm['spot_count'].to_csv('./spot_count_test.csv')
+
 
 
 
