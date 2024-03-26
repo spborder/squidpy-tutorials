@@ -48,6 +48,45 @@ def postpone_transformation(
             sequence = sd.transformations.Sequence([old_transformation, transformation])
             sd.transformations.set_transformation(element, sequence, target_coordinate_system)
 
+def labels_from_shapely(shape_list, target_size_Y, target_size_X):
+    """
+    Create a label image from a list of shapes
+    """
+    from skimage.draw import polygon
+
+    label_mask = np.zeros((target_size_Y,target_size_X))
+    for shape_idx,shape in enumerate(shape_list):
+        if shape.geom_type == 'Polygon':
+            coords = list(shape.exterior.coords)
+            x_coords = [i[0] for i in coords]
+            y_coords = [i[1] for i in coords]
+
+            # Verify type requirements for this (what if one crs features floats?)
+            bounds = [int(i) for i in shape.bounds]
+
+            height = bounds[3]-bounds[1]
+            width = bounds[2]-bounds[0]
+            scaled_x_coords = [i-bounds[0] for i in x_coords]
+            scaled_y_coords = [i-bounds[1] for i in y_coords]
+
+            shape_mask = np.zeros((height,width))
+            row, col = polygon(r = scaled_y_coords, c = scaled_x_coords)
+            shape_mask[row,col] = shape_idx+1
+
+            label_mask[bounds[1]:bounds[3], bounds[0]:bounds[2]] += shape_mask
+
+        else:
+            print(f'Invalid polygon type found: {shape.geom_type}')
+            continue
+
+    return label_mask
+
+
+
+
+
+
+
 
 def main():
 
