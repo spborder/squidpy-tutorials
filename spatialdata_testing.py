@@ -19,7 +19,7 @@ import spatialdata_plot
 
 from math import floor
 
-def generate_random_boxes(image_Y,image_X,n_boxes=200,max_size=1000):
+def generate_random_boxes(image_Y,image_X,n_boxes=200,max_size=100):
     """
     Generate random box polygons for a given image. Outputs labeled mask that is the same spatial dimensions as the original image (image_Y,image_X)
     
@@ -96,6 +96,16 @@ def main():
         image_X= shape_X,
         image_Y = shape_Y
     )
+
+    box_poly_list.append(
+        box(
+            minx = 0,
+            miny = 0,
+            maxx = shape_X,
+            maxy = shape_Y
+        )
+    )
+
     box_poly_df = gpd.GeoDataFrame(geometry=box_poly_list,crs = None)
     box_poly_bounds = box_poly_df.total_bounds.tolist()
     print(f'boxes bounds: {box_poly_bounds}')
@@ -110,16 +120,16 @@ def main():
     transform = sd.transformations.get_transformation_between_landmarks(
         references_coords = sd.models.ShapesModel.parse(
             np.array([
-                [box_poly_bounds[0],box_poly_bounds[1]],
-                [box_poly_bounds[2],box_poly_bounds[3]]
+                [box_poly_bounds[1],box_poly_bounds[0]],
+                [box_poly_bounds[3],box_poly_bounds[2]]
             ]),
             geometry = 0,
             radius = 100
         ),
         moving_coords = sd.models.ShapesModel.parse(
             np.array([
-                [target_bounds[1],target_bounds[0]],
-                [target_bounds[3],target_bounds[2]]
+                [target_bounds[0],target_bounds[1]],
+                [target_bounds[2],target_bounds[3]]
             ]),
             geometry = 0,
             radius = 100
@@ -135,24 +145,28 @@ def main():
     other_transform = sd.transformations.align_elements_using_landmarks(
         references_coords = sd.models.ShapesModel.parse(
             np.array([
-                [box_poly_bounds[0],box_poly_bounds[1]],
-                [box_poly_bounds[2],box_poly_bounds[3]]
+                [box_poly_bounds[1],box_poly_bounds[0]],
+                [box_poly_bounds[3],box_poly_bounds[2]],
+                [box_poly_bounds[1],box_poly_bounds[2]],
+                [box_poly_bounds[3],box_poly_bounds[0]]
             ]),
             geometry = 0,
             radius = 100
         ),
         moving_coords = sd.models.ShapesModel.parse(
             np.array([
-                [target_bounds[1],target_bounds[0]],
-                [target_bounds[3],target_bounds[2]]
+                [target_bounds[0],target_bounds[1]],
+                [target_bounds[2],target_bounds[3]],
+                [target_bounds[0],target_bounds[3]],
+                [target_bounds[2],target_bounds[1]]
             ]),
             geometry = 0,
             radius = 100
         ),
-        reference_element = visium_sdata[f'{image_name}_hires_image'],
-        moving_element = visium_sdata.shapes['Random_Boxes'],
-        reference_coordinate_system=image_name,
-        moving_coordinate_system='global',
+        reference_element = visium_sdata.shapes['Random_Boxes'],
+        moving_element = visium_sdata[f'{image_name}_hires_image'],
+        reference_coordinate_system='global',
+        moving_coordinate_system=image_name,
         new_coordinate_system='aligned'
     )
     print(other_transform)
@@ -165,6 +179,7 @@ def main():
     )
     
     print(visium_sdata)
+    visium_sdata.shapes['Random_Boxes'] = visium_sdata.shapes['Random_Boxes'].iloc[0:-2,:]
 
     visium_sdata.pl.render_images().pl.render_shapes().pl.show('aligned')
 
