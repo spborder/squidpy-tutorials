@@ -97,6 +97,7 @@ def main():
         image_Y = shape_Y
     )
 
+    # Adding this box makes it so that the image and the random boxes have the same total_bounds (height and width)
     box_poly_list.append(
         box(
             minx = 0,
@@ -142,6 +143,12 @@ def main():
     )
     print(visium_sdata)
 
+
+    # Aligning boxes shapes and the target image 
+    # Reference and moving coords are the "landmarks" which are just the four corners of the shapes GeoDataFrame and the image
+    # geometry = 0 means that the reference landmarks are points
+    # radius = 100 means that they are converted to circles with radius of 100
+    # This creates a new coordinate system called "aligned"
     other_transform = sd.transformations.align_elements_using_landmarks(
         references_coords = sd.models.ShapesModel.parse(
             np.array([
@@ -171,6 +178,7 @@ def main():
     )
     print(other_transform)
 
+    # This function applies the transform to 
     postpone_transformation(
         sdata = visium_sdata,
         transformation = other_transform,
@@ -179,9 +187,17 @@ def main():
     )
     
     print(visium_sdata)
+    # Removing the "total" box used for registration
     visium_sdata.shapes['Random_Boxes'] = visium_sdata.shapes['Random_Boxes'].iloc[0:-2,:]
 
+    # This displays the image with overlaid shapes, however, since the image has also been registered to an "aligned" space there is a great deal of distortion
     visium_sdata.pl.render_images().pl.render_shapes().pl.show('aligned')
+
+
+
+
+
+
 
 
 
