@@ -112,7 +112,6 @@ def main():
     codex_thumbnail_shape = np.shape(codex_thumbnail)
     # Converting thumbnail image to (cyx)
     codex_thumbnail = np.moveaxis(codex_thumbnail, source = -1, destination = 0)
-    # Reading smaller size level into memory
 
     # Scale factors for annotations on thumbnails
     histo_scale_X = histo_sizeX/histo_thumbnail_shape[1]
