@@ -23,6 +23,14 @@ from PIL import Image
 from math import floor
 import json
 
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from spatialdata.models import Image2DModel
+from spatialdata.transformations import Scale, Sequence, Translation
+
+
 def shapely_from_json(json_annotations, scale_list):
 
     shape_list = []
@@ -81,6 +89,54 @@ def labels_from_shapely(shape_list, target_size_Y, target_size_X):
 
     return label_mask
 
+def matplotlib_figure_to_array(fig: Figure) -> np.ndarray:
+    """
+    Render a Matplotlib figure to a Numpy array.
+
+    Args:
+        fig: A figure. The figure's canvas must be a FigureCanvasAgg
+
+    Returns:
+        An RGB Numpy array
+    """
+    # From https://stackoverflow.com/a/7821917
+    # matplotlib.pyplot.switch_backend("agg")
+
+    # If we haven't already shown or saved the plot, then we need to
+    # draw the figure first...
+    fig.canvas: FigureCanvasAgg
+    fig.canvas.draw()
+
+    # Now we can save it to a Numpy array.
+    array = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
+    image_rgba = array.reshape(fig.canvas.get_width_height()[::-1] + (4,))
+    image_rgb = image_rgba[:, :, :3]
+    return image_rgb
+
+def create_figure_and_axes(shape: tuple[int, int], resolution: float) -> Axes:
+    """
+    Create a Matplotlib figure with axes that is fully filled by the plot, no padding/labels/legend.
+
+    Args:
+        shape: Shape of the plot area in data units
+        resolution: Scale factor for units of the shape to image pixels
+
+    Returns:
+        The axes object to plot into
+    """
+    plt.set_cmap('grays')
+    dpi = 100
+    image_size_yx = np.asarray(shape) * resolution
+    print(image_size_yx)
+    fig = Figure(dpi=dpi, figsize=np.squeeze(np.flip(image_size_yx) / dpi), frameon=False, layout="tight")
+    # The Agg backend is required for later accessing FigureCanvasAgg.buffer_rgba()
+    fig.canvas.switch_backends(FigureCanvasAgg)
+    fig.bbox_inches = fig.get_tightbbox().padded(0)
+    ax: Axes = fig.add_axes(rect=(0.0, 0.0, 1.0, 1.0))
+    
+    return ax
+
+
 
 def main():
 
@@ -92,8 +148,18 @@ def main():
     histo_meta = histology_img.getMetadata()
     histo_sizeX, histo_sizeY = histo_meta['sizeX'], histo_meta['sizeY']
 
-    histo_thumbnail, _ = histology_img.getThumbnail()
-    histo_thumbnail = np.array(Image.open(BytesIO(histo_thumbnail)))
+    histo_thumbnail,_ = histology_img.getRegion(
+        format = large_image.constants.TILE_FORMAT_NUMPY,
+        region = {
+            'top': 0,
+            'left': 0,
+            'right': histo_sizeX,
+            'bottom': histo_sizeY
+        }
+    )
+
+    #histo_thumbnail, _ = histology_img.getThumbnail()
+    #histo_thumbnail = np.array(Image.open(BytesIO(histo_thumbnail)))
     histo_thumbnail_shape = np.shape(histo_thumbnail)
 
     # Images are assumed to be (cyx)
@@ -107,8 +173,19 @@ def main():
     codex_meta = codex_img.getMetadata()
     codex_sizeX, codex_sizeY = codex_meta['sizeX'], codex_meta['sizeY']
 
-    codex_thumbnail, _ = codex_img.getThumbnail()
-    codex_thumbnail = np.array(Image.open(BytesIO(codex_thumbnail)))    
+    codex_thumbnail, _ = codex_img.getRegion(
+        format = large_image.constants.TILE_FORMAT_NUMPY,
+        region = {
+            'top': 0,
+            'left': 0,
+            'right': codex_sizeX,
+            'bottom': codex_sizeY
+        },
+        frame = 0
+    )
+
+    #codex_thumbnail, _ = codex_img.getThumbnail()
+    #codex_thumbnail = np.array(Image.open(BytesIO(codex_thumbnail)))    
     codex_thumbnail_shape = np.shape(codex_thumbnail)
     # Converting thumbnail image to (cyx)
     codex_thumbnail = np.moveaxis(codex_thumbnail, source = -1, destination = 0)
@@ -172,8 +249,8 @@ def main():
     print(multi_sdata)
 
     # Showing the image and landmarks associated with that image
-    multi_sdata.pl.render_images().pl.render_shapes().pl.show('histo_crs')
-    multi_sdata.pl.render_images().pl.render_shapes().pl.show('codex_crs')
+    #multi_sdata.pl.render_images().pl.render_shapes().pl.show('histo_crs')
+    #multi_sdata.pl.render_images().pl.render_shapes().pl.show('codex_crs')
 
 
     # Aligning based on landmarks
@@ -190,6 +267,7 @@ def main():
     # Creates an affine transform sequence to go from one coordinate system to the other
     print(transform)
 
+
     # This applies that transform to all the objects in a particular coordinate system
     postpone_transformation(
         sdata = multi_sdata,
@@ -201,9 +279,45 @@ def main():
     print(multi_sdata)
 
     # Showing aligned and separate (but transformed) images and landmarks
-    multi_sdata.pl.render_images().pl.render_shapes().pl.show('aligned')
-    multi_sdata.pl.render_images('histo_img').pl.render_shapes().pl.show('aligned')
-    multi_sdata.pl.render_images('codex_img').pl.render_shapes().pl.show('aligned')
+    #multi_sdata.pl.render_images().pl.render_shapes().pl.show('aligned')
+    #multi_sdata.pl.render_images('histo_img').pl.render_shapes().pl.show('aligned')
+    #multi_sdata.pl.render_images('codex_img').pl.render_shapes().pl.show('aligned')
+
+    # Writing image array
+
+    # Courtesy of: https://github.com/scverse/spatialdata-plot/issues/204
+    bounding_box = sd.get_extent(
+        multi_sdata.shapes['codex_landmarks'],
+        coordinate_system = 'aligned'
+    )
+    print(bounding_box)
+    query_box = np.array([
+        [bounding_box['y'][0], bounding_box['x'][0]],
+        [bounding_box['y'][1],bounding_box['x'][1]]
+    ])
+    print(query_box)
+    resolution = 1.0
+
+    cropped_sdata = multi_sdata.query.bounding_box(
+        axes = ("y","x"),
+        min_coordinate = query_box[0],
+        max_coordinate = query_box[1],
+        target_coordinate_system = "aligned"
+    )
+
+    ax = create_figure_and_axes(shape = tuple(np.diff(query_box,axis=0)), resolution = resolution)
+    cropped_sdata.pl.render_images().pl.show(coordinate_systems = "aligned",ax=ax)
+
+    ax.set_ybound(query_box[0][0],query_box[1][0])
+    ax.set_xbound(query_box[0][1],query_box[1][1])
+
+    image_array = matplotlib_figure_to_array(ax.figure)
+    Image.fromarray(image_array).save('./dsa/test_aligned_image.tif')
+
+
+
+
+
 
 
 
