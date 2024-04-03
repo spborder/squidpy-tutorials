@@ -124,7 +124,7 @@ def create_figure_and_axes(shape: tuple[int, int], resolution: float) -> Axes:
     Returns:
         The axes object to plot into
     """
-    plt.set_cmap('grays')
+    plt.set_cmap('Greys')
     dpi = 100
     image_size_yx = np.asarray(shape) * resolution
     print(image_size_yx)
