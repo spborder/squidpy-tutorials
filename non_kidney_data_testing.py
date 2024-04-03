@@ -13,10 +13,13 @@ import spatialdata_plot
 import anndata as ad
 import large_image
 
-from shapely.geometry import Point
+from shapely.geometry import Point, box
 import geopandas as gpd
 
 import pandas as pd
+from math import ceil
+from PIL import Image
+import matplotlib.pyplot as plt
 
 
 def calculate_mpp(coordinates_array):
@@ -48,25 +51,23 @@ def distance(point1, point2):
 
 def main():
     path_to_data = 'C:\\Users\\samuelborder\\Desktop\\HIVE_Stuff\\FUSION\\Test Upload\\non_kidney\\'
-    print(os.listdir(path_to_data))
 
     ann_data_object = ad.read_h5ad(path_to_data+'secondary_analysis.h5ad')
     print(ann_data_object)
-    print(ann_data_object.n_obs)
-    print(ann_data_object.n_vars)
-    print(ann_data_object.shape)
-    print(ann_data_object.uns["spatial"])
-    print(ann_data_object.obsm['spatial'])
-    print('--------------------------')
-    print(ann_data_object.uns['umap'])
-    print(ann_data_object.obsm['X_umap'])
-    print(ann_data_object.var['highly_variable'].sum())
-    print(list(ann_data_object.var['mean'].sort_values(ascending=False).iloc[0:10].index))
-    highest_means = list(ann_data_object.var['mean'].sort_values(ascending=False).iloc[0:10].index)
-    subset_ann_data = ann_data_object[:,highest_means]
-    print(subset_ann_data)
-    print(subset_ann_data.var['dispersions'])
-    print('------------------------------------')
+    #print(ann_data_object.uns["spatial"])
+    #print(ann_data_object.obsm['spatial'])
+    #print('--------------------------')
+    #print(ann_data_object.uns['umap'])
+    #print(ann_data_object.obsm['X_umap'])
+    #print(ann_data_object.var['highly_variable'].sum())
+    #print(list(ann_data_object.var['mean'].sort_values(ascending=False).iloc[0:10].index))
+    #print('------------------------------------')
+    #print('----Standard Deviations---------------')
+    #print(ann_data_object.var['std'])
+    #print('---------------------------------------')
+    #print('--------Means------------------')
+    #print(ann_data_object.var['mean'])
+    #print('-------------------------------------')
 
     image_source = large_image.open(path_to_data+'visium_histology_hires_pyramid.ome.tif')
     image_meta = image_source.getMetadata()
@@ -81,8 +82,8 @@ def main():
                 'top': 0,
                 'right': image_meta['sizeX'],
                 'bottom': image_meta['sizeY'],
-                'frame': i
-            }
+            },
+            frame = i
         )
         image_combined_array[i,:,:] += np.uint8(np.squeeze(image_array))
 
@@ -126,27 +127,69 @@ def main():
 
     non_kidney_sd.pl.render_images().pl.render_shapes().pl.show('global')
 
+    # Generating subsetted h5ad and image
+    query_box = box(
+        minx = 6000,
+        miny = 9000,
+        maxx = 8500,
+        maxy = 12000
+    )
 
+    # Getting index of spots that are contained within this box
+    #query_gdf = gpd.GeoDataFrame(geometry = query_box)
+
+    #contains_gdf = gpd.sjoin(query_gdf,shape_gdf,predicate='contains')
+    #print(contains_gdf.shape)
+    contained_spots = [i for i in range(len(shape_list)) if shape_list[i].within(query_box)]
+    print(contained_spots)
+
+    subset_ann_data = ann_data_object[contained_spots,:]
+
+    # Adjusting coordinates of spots prior to saving
+    adjusted_coord_list = []
+    for i in subset_ann_data.obsm['spatial'].tolist():
+        adjusted_coord_list.append(
+            [
+                ceil(i[0] - 6000), 
+                ceil(i[1] - 9000)
+            ]
+        )
+
+    subset_ann_data.obsm['spatial'] = np.array(adjusted_coord_list)
+
+    # Reverse scaling subsetted data
+    print(ann_data_object.var['mean'].shape)
+    print(ann_data_object.var['std'].shape)
+    print(subset_ann_data.shape)
+    print(subset_ann_data.layers['unscaled'])
+    subset_ann_data.X = ann_data_object.var['std'].values[:,None].T*(subset_ann_data.X + ann_data_object.var['mean'].values[:,None].T)
+
+    subset_ann_data.write_h5ad(path_to_data+'subset_object.h5ad')
+
+    contained_gdf = gpd.GeoDataFrame(geometry = [shape_list[i] for i in contained_spots])
+    contained_bounds = [ceil(i) for i in list(contained_gdf.total_bounds)]
+
+    width = ceil(contained_bounds[2]-contained_bounds[0])+200
+    height = ceil(contained_bounds[3]-contained_bounds[1])+200
+
+    subset_image_combined_array = np.zeros((height,width,3),dtype=np.uint8)
+    for i in range(len(image_meta['frames'])):
+        image_array,_ = image_source.getRegion(
+            format = large_image.constants.TILE_FORMAT_NUMPY,
+            region = {
+                'left': contained_bounds[0],
+                'top': contained_bounds[1],
+                'right': contained_bounds[2]+200,
+                'bottom': contained_bounds[3]+200,
+            },
+            frame = i
+        )
+        subset_image_combined_array[:,:,i] += np.uint8(np.squeeze(image_array))
+        
+    Image.fromarray(subset_image_combined_array).save(path_to_data+'subset_image.tif')
 
 if __name__=='__main__':
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
